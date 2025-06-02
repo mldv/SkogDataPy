@@ -83,7 +83,7 @@ class DataSourceSpec:
 
 class RasterDataSource(ABC):
     @abstractmethod
-    def __call__(self, polygon: BaseGeometry) -> tuple[numpy.ndarray, Affine]:
+    def __call__(self, polygon: BaseGeometry, padding: int = 0) -> tuple[numpy.ndarray, Affine]:
         pass
 
 
@@ -174,7 +174,7 @@ class TradhojdDataLoader(DataSourceSpec, RasterDataSource):
         ]
 
     def __call__(
-            self, polygon: BaseGeometry | fiona.Feature, verbose: bool = False, padding: int = 20
+            self, polygon: BaseGeometry | fiona.Feature, padding: int = 20
     ) -> tuple[numpy.ndarray, Affine]:
         pol = self._sanitize_polygon(polygon)
         nn = self.filenames_from_polygon(pol.envelope)
