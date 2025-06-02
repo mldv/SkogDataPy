@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "skogdata"
-version = "0.0.1"
+version = "0.1.0"
 description = "Facilitates the access to geospatial data about forests from specific providers, such as Skogsstyrelsen"
 authors = [
   { name="Marco Della Vedova", email="marco.dellavedova@gmail.com" },

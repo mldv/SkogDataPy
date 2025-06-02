@@ -83,7 +83,7 @@ class DataSourceSpec:
 
 class RasterDataSource(ABC):
     @abstractmethod
-    def __call__(self, polygon: shapely.Geometry) -> tuple[numpy.ndarray, Affine]:
+    def __call__(self, polygon: BaseGeometry) -> tuple[numpy.ndarray, Affine]:
         pass
 
 
@@ -111,7 +111,7 @@ class TradhojdDataLoader(DataSourceSpec, RasterDataSource):
     def metadata(self):
         assert self.metadata_source is not None
         if self._metadata is None:
-            self._metadata = geopandas.read_file(self.metadata_source.path)
+            self._metadata = geopandas.read_file(self.metadata_source().path)
         return self._metadata
 
     @property
@@ -123,15 +123,18 @@ class TradhojdDataLoader(DataSourceSpec, RasterDataSource):
         return self._mapped_region
 
     @staticmethod
-    def _sanitize_polygon(polygon: shapely.Polygon | shapely.MultiPolygon | fiona.Feature) -> BaseGeometry:
+    def _sanitize_polygon(polygon: BaseGeometry | shapely.Polygon | shapely.MultiPolygon | fiona.Feature) -> BaseGeometry:
         assert (
                 isinstance(polygon, shapely.Polygon)
                 or isinstance(polygon, shapely.MultiPolygon)
                 or isinstance(polygon, fiona.Feature)
         )
-        return (
-            shape(polygon.geometry) if isinstance(polygon, fiona.Feature) else polygon
-        )
+        if isinstance(polygon, fiona.Feature):
+            if polygon.geometry is None:
+                raise ValueError("Feature geometry is None")
+            return shape(polygon.geometry)
+        else:
+            return polygon
 
     def las_namn_from_polygon(self, polygon: BaseGeometry):
         pol = self._sanitize_polygon(polygon)
@@ -146,7 +149,7 @@ class TradhojdDataLoader(DataSourceSpec, RasterDataSource):
         if all(x in self.metadata['square'].values for x in square_list):
             # Get only the last entry for each square
             res = self.metadata.query("square in @square_list").sort_values("Unixday").groupby("square").last()
-            res = res["Las_Namn"].to_list()
+            res = res["Las_namn"].to_list()
             return res
         else:
             return []
@@ -171,7 +174,7 @@ class TradhojdDataLoader(DataSourceSpec, RasterDataSource):
         ]
 
     def __call__(
-            self, polygon: shapely.Geometry | fiona.Feature, verbose: bool = False, padding: int = 20
+            self, polygon: BaseGeometry | fiona.Feature, verbose: bool = False, padding: int = 20
     ) -> tuple[numpy.ndarray, Affine]:
         pol = self._sanitize_polygon(polygon)
         nn = self.filenames_from_polygon(pol.envelope)
@@ -204,7 +207,7 @@ _suffixes = ("shx", "sbx", "sbn", "prj", "dbf", "cpg")
 @dataclass
 class DataSourceCatalog:
     Tradhojd_metadata = SingleFileDataLoader(
-        "Tradhojd_LaserdataSkog/Metadata/TradhojdLaserdataSkogMetadata_20240825.shp",
+        "Tradhojd_LaserdataSkog/Metadata/TradhojdLaserdataSkogMetadata_20250131.shp",
         "shapefile",
         ["dbf", "shx"],
     )
