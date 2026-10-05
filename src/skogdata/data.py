@@ -207,7 +207,7 @@ _suffixes = ("shx", "sbx", "sbn", "prj", "dbf", "cpg")
 @dataclass
 class DataSourceCatalog:
     Tradhojd_metadata = SingleFileDataLoader(
-        "Tradhojd_LaserdataSkog/Metadata/TradhojdLaserdataSkogMetadata_20250131.shp",
+        "Tradhojd_LaserdataSkog/Metadata/TradHojdLaserdataSkogMetadata_20250131.shp",
         "shapefile",
         ["dbf", "shx"],
     )

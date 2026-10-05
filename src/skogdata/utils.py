@@ -12,6 +12,8 @@ from .data import DataSourceCatalog, RasterDataSource
 
 def combine_raster_and_polygon(raster, polygon, transform) -> numpy.ndarray:
     """Combine a raster and a polygon into a single raster with the polygon as a mask."""
+    if len(raster.shape) == 2:
+        raster = numpy.expand_dims(raster, axis=0)
     img = rasterio.features.rasterize(
         [polygon], out_shape=raster.shape[1:], transform=transform
     )
