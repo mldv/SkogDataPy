@@ -1,7 +1,12 @@
+import datetime
+
 import pytest
+import shapely
 import shapely.wkt
 
 from skogdata import DataSourceCatalog
+from skogdata import ftp as skog_ftp
+from skogdata.data import TradhojdDataLoader, get_file, lasnamn2path, normalize_lasnamn
 
 def load_example_polygon():
     # Same as Natura2000_coniferous, OBJECT_ID = 114206
@@ -28,3 +33,30 @@ def test_las_namn_from_polygon2():
     polygon = shapely.Polygon([(542501, 6930000), (547001,6930000), (547001,6930050), (542501,6930050)])
     res = DataSourceCatalog.Tradhojd.las_namn_from_polygon(polygon)
     assert res == ['19E031_69300_5425_25', '19E031_69300_5450_25']
+
+
+def test_normalize_lasnamn():
+    assert normalize_lasnamn("23B032_658_46_7525") == "23B032_65875_4625_25"
+    assert normalize_lasnamn("21D013_66600_5000_25") == "21D013_66600_5000_25"
+
+
+def test_lasnamn2path_new_naming():
+    assert lasnamn2path("23B019_650_40_0050") == "Tradhojd_LaserdataSkog/2023/65_4/THL_23B019_65000_4050_2023.mrf"
+
+
+def test_cutoff():
+    loader = TradhojdDataLoader()
+    loader.configure(metadata="20250131", cutoff="2022-12-31")
+    assert loader.metadata["Skanndat"].max() <= "2022-12-31"
+    polygon = shapely.box(688640, 6580480, 689920, 6581760)
+    loader.configure(metadata="20250131")
+    assert loader.contains(polygon)
+    scan_date = loader.metadata.set_index("Las_namn").loc[loader.las_namn_from_polygon(polygon)[0], "Skanndat"]
+    loader.configure(metadata="20250131", cutoff=datetime.date.fromisoformat(scan_date) - datetime.timedelta(days=1))
+    assert not loader.contains(polygon)
+
+
+def test_offline_missing_file(monkeypatch):
+    monkeypatch.setattr(skog_ftp, "OFFLINE", True)
+    with pytest.raises(FileNotFoundError, match="Offline mode"):
+        get_file("Tradhojd_LaserdataSkog/2021/65_7/THL_DOES_NOT_EXIST.mrf")

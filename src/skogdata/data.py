@@ -1,3 +1,4 @@
+import datetime
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from itertools import product
@@ -20,11 +21,30 @@ from . import ftp as skog_ftp
 from .ftp import CACHE_PATH
 
 
+TRADHOJD_METADATA = {
+    "20250131": "Tradhojd_LaserdataSkog/Metadata/TradHojdLaserdataSkogMetadata_20250131.shp",
+    "20260331": "Tradhojd_LaserdataSkog/Metadata/TradHojdLaserdataSkogMetadata_20260331_Omdrev2.shp",
+}
+TRADHOJD_METADATA_LATEST = "20260331"
+
+
+def normalize_lasnamn(lasnamn: str) -> str:
+    """Converts a LasNamn in the naming used since mid-2022 to the one used for the file names.
+    Example:
+    '23B032_658_46_7525' -> '23B032_65875_4625_25'
+    """
+    block, north, east, rest = lasnamn.split("_")
+    if len(north) == 3:
+        return f"{block}_{north}{rest[:2]}_{east}{rest[2:]}_25"
+    return lasnamn
+
+
 def lasnamn2path(lasnamn: str) -> str:
     """Converts the LasNamn to the path.
     Example:
     '21D013_66600_5000_25' -> 'Tradhojd_LaserdataSkog/2021/66_5/THL_21D013_66600_5000_2021.mrf'
     """
+    lasnamn = normalize_lasnamn(lasnamn)
     BASEDIR = "Tradhojd_LaserdataSkog"
     dir1 = "20" + lasnamn[:2]
     splits = lasnamn.split("_")
@@ -57,6 +77,10 @@ def get_file(
     filenames = _additional_files(filename, other_suffixes)
     files_to_download = [x for x in filenames if not (CACHE_PATH / x).is_file()]
     if files_to_download:
+        if skog_ftp.OFFLINE:
+            raise FileNotFoundError(
+                f"Offline mode, files missing in {CACHE_PATH}: " + ", ".join(map(str, files_to_download))
+            )
         skog_ftp.download_from_ftp(files_to_download)
 
     assert all((CACHE_PATH / x).is_file() for x in filenames)
@@ -83,6 +107,11 @@ class RasterDataSource(ABC):
 
 class SingleFileDataLoader(DataSourceSpec):
     @property
+    def files(self) -> list[Path]:
+        """All files (relative to the cache folder and the FTP root) of this data source."""
+        return _additional_files(self.name, self.other_suffixes or [])
+
+    @property
     def path(self):
         return get_file(self.name, self.other_suffixes, ftp=self.ftp_connection)
 
@@ -95,25 +124,44 @@ class SingleFileDataLoader(DataSourceSpec):
             return fiona.open(self.path)
 
 
+def _tradhojd_metadata_loader(version: str) -> SingleFileDataLoader:
+    return SingleFileDataLoader(TRADHOJD_METADATA[version], "shapefile", ["dbf", "shx", "prj"])
+
+
 class TradhojdDataLoader(DataSourceSpec, RasterDataSource):
     def __init__(self) -> None:
         self._metadata = None
         self._mapped_region = None
+        self.cutoff: str | None = None
         super().__init__("Tradhojd_LaserdataSkog", "raster")
+
+    def configure(self, metadata: str = TRADHOJD_METADATA_LATEST, cutoff: str | datetime.date | None = None) -> None:
+        """Select the metadata version (a key of TRADHOJD_METADATA) and ignore scans made after the cutoff date.
+
+        For reproducible results, fix both: the metadata lists one scan per square, so a newer version may
+        replace scans that a cutoff alone cannot bring back.
+        """
+        self.metadata_source = _tradhojd_metadata_loader(metadata)
+        self.cutoff = None if cutoff is None else datetime.date.fromisoformat(str(cutoff)).isoformat()
+        self._metadata = None
+        self._mapped_region = None
 
     @property
     def metadata(self):
+        """Available scans: one row per scan, with `square` derived from `Las_namn`, scans after the cutoff removed."""
         assert self.metadata_source is not None
         if self._metadata is None:
-            self._metadata = geopandas.read_file(self.metadata_source().path)
+            metadata = geopandas.read_file(self.metadata_source.path)
+            metadata["square"] = metadata["Las_namn"].map(lambda x: normalize_lasnamn(x).split("_", 1)[1])
+            if self.cutoff is not None:
+                metadata = metadata[metadata["Skanndat"] <= self.cutoff]
+            self._metadata = metadata
         return self._metadata
 
     @property
     def mapped_region(self):
         if self._mapped_region is None:
-            self._mapped_region = shapely.union_all(
-                [shape(x.geometry) for i, x in self.metadata.iterrows()]
-            )
+            self._mapped_region = shapely.union_all(self.metadata.geometry.values)
         return self._mapped_region
 
     @staticmethod
@@ -159,13 +207,12 @@ class TradhojdDataLoader(DataSourceSpec, RasterDataSource):
             (CACHE_PATH / x).is_file() for x in self.filenames_from_polygon(polygon)
         )
 
+    def required_files(self, polygon) -> list[Path]:
+        """All files (relative to the cache folder and the FTP root) needed to read the CHM for the polygon."""
+        return [y for x in self.filenames_from_polygon(polygon) for y in _additional_files(x, ["idx", "lrc"])]
+
     def cache_misses(self, polygon):
-        return [
-            y
-            for x in self.filenames_from_polygon(polygon)
-            for y in _additional_files(x, ["idx", "lrc"])
-            if not (CACHE_PATH / y).is_file()
-        ]
+        return [x for x in self.required_files(polygon) if not (CACHE_PATH / x).is_file()]
 
     def __call__(
             self, polygon: BaseGeometry | fiona.Feature, padding: int = 20
@@ -200,12 +247,7 @@ _suffixes = ("shx", "sbx", "sbn", "prj", "dbf", "cpg")
 
 @dataclass
 class DataSourceCatalog:
-    Tradhojd_metadata = SingleFileDataLoader(
-        "Tradhojd_LaserdataSkog/Metadata/TradHojdLaserdataSkogMetadata_20250131.shp",
-        "shapefile",
-        ["dbf", "shx"],
-    )
     Tradhojd = TradhojdDataLoader()
 
 
-DataSourceCatalog.Tradhojd.metadata_source = DataSourceCatalog.Tradhojd_metadata
+DataSourceCatalog.Tradhojd.configure()

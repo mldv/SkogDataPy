@@ -5,9 +5,47 @@ In the current version, just the Canopy Height Model (i.e., _Tradhojd_LaserdataS
 
 ## Description
 
-Data is retrieved on-demand from the FTP server (`ftpsks.skogsstyrelsen.se`) and saved in the `cache` folder.
-Alternatively, you can pre-download data from the FTP server with your favorite ftp client, such as FileZilla.
-Note that the location of the cache folder can be set with the `.env` file.
+Data is retrieved on demand from Skogsstyrelsen's FTP server (`ftpsks.skogsstyrelsen.se`) and saved in a cache folder.
+Files already in the cache are never downloaded again.
+
+### Configuration
+
+Settings are read from environment variables or from a `.env` file in the working directory (see [.env-example](.env-example)):
+
+- `CACHE`: absolute path of the cache folder. Default is `{project_root}/cache`.
+- `SKOGDATA_OFFLINE=1`: never connect to the FTP server. Missing files raise a `FileNotFoundError` that lists them.
+
+### Downloading the data manually
+
+You can download the data with any FTP client (e.g. FileZilla or `lftp`) instead.
+The server uses implicit FTPS on port 990. The public credentials are published by
+[Skogsstyrelsen](https://www.skogsstyrelsen.se/sjalvservice/karttjanster/geodatatjanster/ftp/) and are also in [ftp.py](src/skogdata/ftp.py).
+Keep the folder structure of the server below the cache folder, for example:
+
+```
+$CACHE/Tradhojd_LaserdataSkog/Metadata/TradHojdLaserdataSkogMetadata_20250131.{shp,dbf,shx,prj}
+$CACHE/Tradhojd_LaserdataSkog/2021/65_7/THL_21C032_65800_7000_2021.{mrf,lrc,idx}
+```
+
+To find which files are needed for an area, download the metadata files first, then:
+
+```python
+from skogdata import DataSourceCatalog
+DataSourceCatalog.Tradhojd.metadata_source.files          # metadata files
+DataSourceCatalog.Tradhojd.required_files(polygon)        # CHM files covering the polygon
+```
+
+### Reproducibility: metadata version and cutoff date
+
+The CHM is updated as new laser scans are made. The metadata lists one scan per 2.5 x 2.5 km square,
+and for each square the most recent scan is used. To always get the same data, fix both the metadata version and a cutoff date:
+
+```python
+DataSourceCatalog.Tradhojd.configure(metadata="20250131", cutoff="2025-01-31")
+```
+
+Scans made after the cutoff are ignored. The available metadata versions are listed in `skogdata.data.TRADHOJD_METADATA`;
+by default the latest one is used, without cutoff.
 
 ## Setup
 

@@ -8,12 +8,19 @@ from pathlib import Path
 from dotenv import dotenv_values, find_dotenv
 from tqdm.auto import tqdm
 
-# Cache folder: CACHE environment variable, else CACHE in a .env file found from the working directory, else {project_root}/cache
-CACHE_PATH = Path(
-    os.environ.get("CACHE")
-    or dotenv_values(find_dotenv(usecwd=True)).get("CACHE")
-    or Path(__file__).parent.parent.parent / "cache"
-).resolve()
+_dotenv = dotenv_values(find_dotenv(usecwd=True))
+
+
+def _setting(name: str) -> str | None:
+    """Value from the environment, else from a .env file found from the working directory."""
+    return os.environ.get(name) or _dotenv.get(name)
+
+
+# Cache folder, mirroring the folder structure of the FTP server. Default is {project_root}/cache
+CACHE_PATH = Path(_setting("CACHE") or Path(__file__).parent.parent.parent / "cache").resolve()
+
+# In offline mode files are only read from the cache (e.g. after downloading them with an FTP client)
+OFFLINE = (_setting("SKOGDATA_OFFLINE") or "").lower() in ("1", "true", "yes")
 
 
 # Note: the following credentials are public (see https://www.skogsstyrelsen.se/sjalvservice/karttjanster/geodatatjanster/ftp/)
@@ -80,8 +87,7 @@ def _download_single_file(filename, ftp, hostname):
     try:
         size = ftp.size(str(remotepath))
     except ftplib.error_perm as e:
-        print("File not found on remote", str(remotepath))
-        raise e
+        raise FileNotFoundError(f"File not found on remote: {remotepath}") from e
 
     print(f"Download {str(remotepath)} from {hostname}.", flush=True)
     # widgets = [
