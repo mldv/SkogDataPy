@@ -5,7 +5,6 @@ from itertools import product
 from pathlib import Path
 from typing import Callable
 
-import fiona
 import geopandas
 import numpy
 import rasterio
@@ -120,8 +119,7 @@ class SingleFileDataLoader(DataSourceSpec):
         return geopandas.read_file(self.path)
 
     def __call__(self, *args, **kwds):
-        if self.type in ["shapefile", "gpkg"]:
-            return fiona.open(self.path)
+        return self.as_geodataframe()
 
 
 def _tradhojd_metadata_loader(version: str) -> SingleFileDataLoader:
@@ -165,18 +163,17 @@ class TradhojdDataLoader(DataSourceSpec, RasterDataSource):
         return self._mapped_region
 
     @staticmethod
-    def _sanitize_polygon(polygon: BaseGeometry | shapely.Polygon | shapely.MultiPolygon | fiona.Feature) -> BaseGeometry:
-        assert (
-                isinstance(polygon, shapely.Polygon)
-                or isinstance(polygon, shapely.MultiPolygon)
-                or isinstance(polygon, fiona.Feature)
-        )
-        if isinstance(polygon, fiona.Feature):
-            if polygon.geometry is None:
+    def _sanitize_polygon(polygon) -> BaseGeometry:
+        """Accept a shapely (Multi)Polygon or any object with a GeoJSON-like `__geo_interface__` (e.g. a fiona Feature)."""
+        if not isinstance(polygon, BaseGeometry):
+            geometry = getattr(polygon, "__geo_interface__", polygon)
+            if geometry.get("type") == "Feature":
+                geometry = geometry.get("geometry")
+            if geometry is None:
                 raise ValueError("Feature geometry is None")
-            return shape(polygon.geometry)
-        else:
-            return polygon
+            polygon = shape(geometry)
+        assert isinstance(polygon, (shapely.Polygon, shapely.MultiPolygon))
+        return polygon
 
     def las_namn_from_polygon(self, polygon: BaseGeometry):
         pol = self._sanitize_polygon(polygon)
@@ -215,7 +212,7 @@ class TradhojdDataLoader(DataSourceSpec, RasterDataSource):
         return [x for x in self.required_files(polygon) if not (CACHE_PATH / x).is_file()]
 
     def __call__(
-            self, polygon: BaseGeometry | fiona.Feature, padding: int = 20
+            self, polygon: BaseGeometry, padding: int = 20
     ) -> tuple[numpy.ndarray, Affine]:
         pol = self._sanitize_polygon(polygon)
         nn = self.filenames_from_polygon(pol.envelope)
