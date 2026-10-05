@@ -5,9 +5,15 @@ import time
 from pathlib import Path
 
 # from progressbar import ProgressBar, Percentage, Bar, ETA, FileTransferSpeed
+from dotenv import dotenv_values, find_dotenv
 from tqdm.auto import tqdm
 
-CACHE_PATH = (Path(__file__).parent.parent.parent / Path("cache")).resolve()
+# Cache folder: CACHE environment variable, else CACHE in a .env file found from the working directory, else {project_root}/cache
+CACHE_PATH = Path(
+    os.environ.get("CACHE")
+    or dotenv_values(find_dotenv(usecwd=True)).get("CACHE")
+    or Path(__file__).parent.parent.parent / "cache"
+).resolve()
 
 
 # Note: the following credentials are public (see https://www.skogsstyrelsen.se/sjalvservice/karttjanster/geodatatjanster/ftp/)

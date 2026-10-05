@@ -13,17 +13,11 @@ from affine import Affine
 from rasterio.mask import mask
 from rasterio.merge import merge
 from shapely.geometry import shape
-from dotenv import dotenv_values
 from shapely.geometry.base import BaseGeometry
 from shapely.geometry.multipolygon import MultiPolygon
 
 from . import ftp as skog_ftp
-
-_config = dotenv_values()
-
-CACHE_PATH = (Path(__file__).parent.parent.parent / Path("cache")).resolve()
-if 'CACHE' in _config:
-    CACHE_PATH = (Path(_config['CACHE'])).resolve()  # type: ignore
+from .ftp import CACHE_PATH
 
 
 def lasnamn2path(lasnamn: str) -> str:
